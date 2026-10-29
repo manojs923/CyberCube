@@ -184,7 +184,3 @@ Open `http://localhost:5173`.
 
 ---
 
-## Author
-
-**Nartan Maruti Naik**
-[GitHub](https://github.com/NartanNaik) | [LinkedIn](https://www.linkedin.com/in/nartan-naik-90499a359/) | naiknartana@gmail.com
