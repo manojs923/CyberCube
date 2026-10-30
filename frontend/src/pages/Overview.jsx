@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Activity, ShieldAlert, Cpu, Database } from 'lucide-react';
+import { Activity, ShieldAlert, Cpu, Database, Flame, Zap } from 'lucide-react';
 
 import SummaryCards from '../components/SummaryCards';
 import DistributionChart from '../components/DistributionChart';
@@ -18,6 +18,22 @@ const Overview = () => {
   const [recentThreats, setRecentThreats] = useState([]);
   
   const [selectedThreat, setSelectedThreat] = useState(null);
+  const [simulating, setSimulating] = useState(false);
+
+  const handleTriggerSimulation = async (vector) => {
+    setSimulating(true);
+    try {
+      const headers = getAuthHeaders();
+      await axios.post(`${API_URL}/simulate/attack?vector=${vector}`, {}, { headers });
+      window.dispatchEvent(new CustomEvent('soc-threat-created'));
+      fetchData();
+    } catch (err) {
+      console.error("Attack simulation failed:", err);
+      alert("Simulation failed. Check backend connection.");
+    } finally {
+      setSimulating(false);
+    }
+  };
 
   const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
 
@@ -163,6 +179,43 @@ const Overview = () => {
             </span>
             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Monitor: ACTIVE</span>
           </div>
+        </div>
+      </div>
+
+      {/* Live Red Team Attack Injector Sandbox */}
+      <div className="glass-panel p-4 bg-slate-900/60 border border-slate-800 rounded-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="p-2 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-400">
+            <Flame className="w-5 h-5 animate-pulse" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold uppercase tracking-wider text-slate-200">Red Team Attack Injector</span>
+              <span className="text-[9px] uppercase font-mono px-1.5 py-0.5 rounded bg-rose-950/60 text-rose-400 border border-rose-500/20">Live Probing</span>
+            </div>
+            <p className="text-[11px] text-slate-400">Inject live MITRE ATT&CK vectors to evaluate real-time AI triage & IPS containment.</p>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          {[
+            { id: 'ddos', label: 'DDoS Flood', code: 'T1498', tone: 'text-rose-400 border-rose-500/30 bg-rose-950/30 hover:bg-rose-900/40' },
+            { id: 'bruteforce', label: 'Brute Force', code: 'T1110', tone: 'text-orange-400 border-orange-500/30 bg-orange-950/30 hover:bg-orange-900/40' },
+            { id: 'web', label: 'Web Exploit', code: 'T1190', tone: 'text-amber-400 border-amber-500/30 bg-amber-950/30 hover:bg-amber-900/40' },
+            { id: 'portscan', label: 'Port Scan', code: 'T1046', tone: 'text-sky-400 border-sky-500/30 bg-sky-950/30 hover:bg-sky-900/40' },
+            { id: 'botnet', label: 'C2 Botnet', code: 'T1071', tone: 'text-purple-400 border-purple-500/30 bg-purple-950/30 hover:bg-purple-900/40' }
+          ].map((atk) => (
+            <button
+              key={atk.id}
+              onClick={() => handleTriggerSimulation(atk.id)}
+              disabled={simulating}
+              className={`px-3 py-1.5 rounded-lg border text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm ${atk.tone} ${simulating ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:scale-[1.02]'}`}
+            >
+              <Zap className="w-3 h-3" />
+              <span>{atk.label}</span>
+              <span className="text-[9px] font-mono opacity-70">({atk.code})</span>
+            </button>
+          ))}
         </div>
       </div>
 

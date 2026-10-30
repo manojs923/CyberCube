@@ -27,7 +27,7 @@ import SplashScreen, { CyberCubeLogo } from './components/SplashScreen';
 import Tour from './components/Tour';
 import { isSetupComplete } from './utils/setupState';
 
-const BACKEND_HOST = 'ai-cyber-threat-backend-k0pz.onrender.com';
+const BACKEND_HOST = (import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000').replace(/^https?:\/\//, '');
 const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
 
 // Tour "already seen" flag is stored per user so each new account gets the walkthrough once.

@@ -3,7 +3,12 @@ from dotenv import load_dotenv
 
 # Load .env file
 # We check both the current directory and the parent directory of backend/
-load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '.env'))
+# Load .env file (check root .env, backend/.env, and current directory)
+_backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_root_dir = os.path.dirname(_backend_dir)
+load_dotenv(os.path.join(_root_dir, '.env'))
+load_dotenv(os.path.join(_backend_dir, '.env'))
+load_dotenv()
 
 class Settings:
     # Database URL configuration

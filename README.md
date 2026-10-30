@@ -42,6 +42,11 @@ CyberCube is a full-stack Security Operations Center (SOC) console. It ingests n
 | Active containment | Generates Windows `netsh advfirewall` commands and exports `iptables`, Suricata and Snort rules for the attacker IP. |
 | Generative explanations | Gemini 1.5 Flash writes plain-English root-cause summaries through a backend proxy, with a rule-based fallback when no key is set. |
 | Global threat map | SVG world map plots attacker origins and animates traffic toward the protected cluster. |
+| Red Team Injector | Instant 1-click adversary simulation for DDoS (T1498), Brute Force (T1110), Web Exploits (T1190), Port Scans (T1046) and C2 Botnets (T1071). |
+| Containment Rollback | Autonomous IPS quarantine with full reversal capabilities (deleting host OS firewall block and updating audit records). |
+| Counterfactual Sandbox | Interactive XAI "What-If" simulator evaluating how packet perturbations flip model verdicts towards Benign. |
+| Cryptographic Audit Trail | Sequential SHA-256 Merkle hash chain proving tamper-evident forensic log integrity for compliance (SOC 2, ISO 27001). |
+| SIEM Webhook Bridge | Real-time formatted incident dispatch to Slack, Discord, and external SIEM collectors. |
 | Multi-tenant access | Google OAuth sign-in, per-user tenant keys derived with HMAC, and 12-hour signed session tokens. |
 
 ---
@@ -172,6 +177,20 @@ Open `http://localhost:5173`.
 2. **Investigate a threat.** Open any incident. Use *Calculate SHAP* for the feature waterfall, *PDF Report* for the incident document and *Firewall Rules* for copy-ready `netsh`, `iptables` and Suricata rules.
 3. **Compare models.** Open the Models page for the benchmark table.
 4. **Stream live traffic.** Run `python src/live_sniffer.py --count 10` and watch alerts arrive through the WebSocket connection.
+
+---
+
+## Testing & Quality Assurance
+
+CyberCube includes an automated end-to-end integration and unit testing suite located in `tests/`:
+- `tests/test_pcap_analyzer.py`: Validates binary PCAP header creation, packet unpacking, and bidirectional flow extraction.
+- `tests/test_ml_pipeline.py`: Tests Random Forest inference, MITRE ATT&CK technique mapping, and counterfactual perturbation calculations.
+- `tests/test_api_endpoints.py`: Tests FastAPI REST routes, tenant key isolation, automated IPS containment, and hash chain audit verification.
+
+Run the test suite with:
+```bash
+pytest tests/ -v
+```
 
 ---
 

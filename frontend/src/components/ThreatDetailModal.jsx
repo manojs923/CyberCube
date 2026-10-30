@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { 
   X, ShieldAlert, CheckCircle, Search, RefreshCw, Cpu, ShieldBan, 
-  Globe, Tag, FileDown, Terminal, BarChart3, Copy, Check 
+  Globe, Tag, FileDown, Terminal, BarChart3, Copy, Check, RotateCcw, 
+  Sliders, Send, AlertTriangle, ArrowRight 
 } from 'lucide-react';
 import axios from 'axios';
 
@@ -19,6 +20,20 @@ const ThreatDetailModal = ({ threat, onClose, onUpdateStatus }) => {
   const [xaiData, setXaiData] = useState(null);
   const [loadingXai, setLoadingXai] = useState(false);
   const [showXai, setShowXai] = useState(false);
+
+  // Counterfactual What-If Sandbox state
+  const [showWhatIf, setShowWhatIf] = useState(false);
+  const [cfData, setCfData] = useState(null);
+  const [runningCf, setRunningCf] = useState(false);
+  const [cfSliders, setCfSliders] = useState({
+    packet_len: threat.features?.fwd_pkt_len_mean || 60,
+    syn_count: threat.features?.syn_flag_cnt || 2,
+    flow_packets_s: threat.features?.flow_pkts_s || 50
+  });
+
+  // SIEM Webhook forward state
+  const [forwardingWebhook, setForwardingWebhook] = useState(false);
+  const [webhookSuccess, setWebhookSuccess] = useState(false);
 
   // Firewall / IDS Rules state
   const [rules, setRules] = useState(null);
@@ -73,6 +88,22 @@ const ThreatDetailModal = ({ threat, onClose, onUpdateStatus }) => {
     }
   };
 
+  const handleUnblockIP = async () => {
+    setUpdating(true);
+    try {
+      const headers = getAuthHeaders();
+      const res = await axios.post(`${API_URL}/threats/${threat.id}/unblock`, {}, { headers });
+      setIsBlocked(false);
+      setStatus("open");
+      onUpdateStatus(threat.id, res.data);
+    } catch (err) {
+      console.error("Failed to rollback quarantine:", err);
+      alert("Failed to unblock IP.");
+    } finally {
+      setUpdating(false);
+    }
+  };
+
   const handleFetchXai = async () => {
     if (xaiData) {
       setShowXai(!showXai);
@@ -89,6 +120,47 @@ const ThreatDetailModal = ({ threat, onClose, onUpdateStatus }) => {
       alert("XAI feature attribution is currently unavailable.");
     } finally {
       setLoadingXai(false);
+    }
+  };
+
+  const handleRunCounterfactual = async (overrideSliders = cfSliders) => {
+    setRunningCf(true);
+    try {
+      const headers = getAuthHeaders();
+      const res = await axios.post(`${API_URL}/threats/${threat.id}/counterfactual`, {
+        perturbations: {
+          fwd_pkt_len_mean: parseFloat(overrideSliders.packet_len),
+          syn_flag_cnt: parseFloat(overrideSliders.syn_count),
+          flow_pkts_s: parseFloat(overrideSliders.flow_packets_s)
+        }
+      }, { headers });
+      setCfData(res.data);
+    } catch (err) {
+      console.error("Counterfactual error:", err);
+    } finally {
+      setRunningCf(false);
+    }
+  };
+
+  const handleForwardToWebhook = async () => {
+    const savedUrl = localStorage.getItem('soc_webhook_url');
+    if (!savedUrl) {
+      alert("Please configure a SIEM or Webhook URL in Settings first!");
+      return;
+    }
+    setForwardingWebhook(true);
+    try {
+      const headers = getAuthHeaders();
+      await axios.post(`${API_URL}/notifications/webhook`, {
+        webhook_url: savedUrl,
+        threat_id: threat.id
+      }, { headers });
+      setWebhookSuccess(true);
+      setTimeout(() => setWebhookSuccess(false), 3000);
+    } catch (err) {
+      alert("Failed to forward alert to configured SIEM webhook.");
+    } finally {
+      setForwardingWebhook(false);
     }
   };
 
@@ -175,6 +247,21 @@ const ThreatDetailModal = ({ threat, onClose, onUpdateStatus }) => {
           </div>
           
           <div className="flex items-center gap-2">
+            {/* SIEM Webhook Dispatch */}
+            <button
+              onClick={handleForwardToWebhook}
+              disabled={forwardingWebhook}
+              title="Forward to configured SIEM Webhook (Slack / Discord)"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-750 text-slate-200 border border-slate-700 text-xs font-semibold transition-all cursor-pointer shadow"
+            >
+              {webhookSuccess ? (
+                <Check className="w-3.5 h-3.5 text-emerald-400" />
+              ) : (
+                <Send className="w-3.5 h-3.5 text-emerald-400" />
+              )}
+              <span>{webhookSuccess ? "Forwarded!" : "SIEM"}</span>
+            </button>
+
             {/* One-Click PDF Export Button */}
             <button
               onClick={handleDownloadPdf}
@@ -263,7 +350,7 @@ const ThreatDetailModal = ({ threat, onClose, onUpdateStatus }) => {
             <div className="pt-3 border-t border-slate-800 flex flex-wrap items-center justify-between gap-2">
               <div>
                 <span className="text-xs font-semibold text-slate-300 block">Firewall Containment:</span>
-                <span className="text-[10px] text-slate-500">Isolate attacker IP via simulated or host OS packet drop.</span>
+                <span className="text-[10px] text-slate-500">Autonomous quarantine or packet drop for adversary IP.</span>
               </div>
               <div className="flex items-center gap-2">
                 <button
@@ -276,9 +363,19 @@ const ThreatDetailModal = ({ threat, onClose, onUpdateStatus }) => {
                 </button>
 
                 {isBlocked ? (
-                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-950/30 border border-emerald-500/20 text-emerald-400 text-xs font-bold">
-                    <CheckCircle className="w-3.5 h-3.5" />
-                    <span>IP Blocked & Contained</span>
+                  <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-950/30 border border-emerald-500/20 text-emerald-400 text-xs font-bold">
+                      <CheckCircle className="w-3.5 h-3.5" />
+                      <span>Quarantined</span>
+                    </div>
+                    <button
+                      onClick={handleUnblockIP}
+                      disabled={updating}
+                      className="bg-amber-600/20 hover:bg-amber-600/30 text-amber-300 border border-amber-500/30 text-xs font-semibold px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 transition-all cursor-pointer shadow"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span>Rollback</span>
+                    </button>
                   </div>
                 ) : (
                   <button
@@ -298,59 +395,151 @@ const ThreatDetailModal = ({ threat, onClose, onUpdateStatus }) => {
               <div className="p-3 bg-slate-950 rounded-lg border border-slate-800 space-y-2 text-xs font-mono animate-fade-in">
                 <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Generated Containment Signatures</span>
                 
-                {/* Windows Netsh */}
-                <div className="p-2 bg-slate-900 rounded border border-slate-800 flex items-center justify-between gap-2">
-                  <div className="overflow-x-auto whitespace-nowrap text-slate-300">
-                    <span className="text-sky-400 font-bold"># Windows (Netsh): </span>
-                    <code>{rules.windows_netsh}</code>
+                <div className="space-y-1">
+                  <div className="flex justify-between items-center text-[10px] text-slate-500">
+                    <span>Windows Netsh:</span>
+                    <button onClick={() => copyToClipboard(rules.windows_netsh, 'netsh')} className="hover:text-slate-300 flex items-center gap-1">
+                      {copiedRule === 'netsh' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                    </button>
                   </div>
-                  <button onClick={() => copyToClipboard(rules.windows_netsh, 'netsh')} className="p-1 hover:text-sky-400 text-slate-500">
-                    {copiedRule === 'netsh' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                  </button>
+                  <pre className="p-1.5 bg-slate-900 rounded border border-slate-850 overflow-x-auto text-[11px] text-slate-300 select-all">
+                    {rules.windows_netsh}
+                  </pre>
                 </div>
 
-                {/* Linux IPTables */}
-                <div className="p-2 bg-slate-900 rounded border border-slate-800 flex items-center justify-between gap-2">
-                  <div className="overflow-x-auto whitespace-nowrap text-slate-300">
-                    <span className="text-amber-400 font-bold"># Linux (IPTables): </span>
-                    <code>{rules.linux_iptables}</code>
+                <div className="space-y-1">
+                  <div className="flex justify-between items-center text-[10px] text-slate-500">
+                    <span>Linux IPtables:</span>
+                    <button onClick={() => copyToClipboard(rules.linux_iptables, 'iptables')} className="hover:text-slate-300 flex items-center gap-1">
+                      {copiedRule === 'iptables' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                    </button>
                   </div>
-                  <button onClick={() => copyToClipboard(rules.linux_iptables, 'iptables')} className="p-1 hover:text-amber-400 text-slate-500">
-                    {copiedRule === 'iptables' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                  </button>
+                  <pre className="p-1.5 bg-slate-900 rounded border border-slate-850 overflow-x-auto text-[11px] text-slate-300 select-all">
+                    {rules.linux_iptables}
+                  </pre>
                 </div>
 
-                {/* Suricata */}
-                <div className="p-2 bg-slate-900 rounded border border-slate-800 flex items-center justify-between gap-2">
-                  <div className="overflow-x-auto whitespace-nowrap text-slate-300">
-                    <span className="text-purple-400 font-bold"># Suricata Rule: </span>
-                    <code>{rules.suricata_rule}</code>
+                <div className="space-y-1">
+                  <div className="flex justify-between items-center text-[10px] text-slate-500">
+                    <span>Suricata Signature:</span>
+                    <button onClick={() => copyToClipboard(rules.suricata_rule, 'suricata')} className="hover:text-slate-300 flex items-center gap-1">
+                      {copiedRule === 'suricata' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                    </button>
                   </div>
-                  <button onClick={() => copyToClipboard(rules.suricata_rule, 'suricata')} className="p-1 hover:text-purple-400 text-slate-500">
-                    {copiedRule === 'suricata' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                  </button>
+                  <pre className="p-1.5 bg-slate-900 rounded border border-slate-850 overflow-x-auto text-[11px] text-slate-300 select-all">
+                    {rules.suricata_rule}
+                  </pre>
                 </div>
               </div>
             )}
           </div>
 
-          {/* Explainable AI (SHAP Feature Attributions) */}
-          <div className="glass-panel p-4 border-sky-500/20 bg-sky-950/10 space-y-3">
+          {/* Explainable AI (SHAP) + What-If Counterfactual Sandbox */}
+          <div className="glass-panel p-4 space-y-3 bg-slate-950/40 border border-slate-800/80">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-sky-400">
                 <BarChart3 className="w-4 h-4" />
-                <h3 className="text-xs font-bold uppercase tracking-wider">Explainable AI (SHAP Feature Attribution)</h3>
+                <h3 className="text-xs font-bold uppercase tracking-wider">Explainable AI (SHAP Waterfall)</h3>
               </div>
-              <button
-                type="button"
-                onClick={handleFetchXai}
-                disabled={loadingXai}
-                className="text-xs font-semibold px-2.5 py-1 rounded bg-sky-600/20 hover:bg-sky-600/30 text-sky-300 border border-sky-500/30 transition-all flex items-center gap-1 cursor-pointer"
-              >
-                {loadingXai && <RefreshCw className="w-3 h-3 animate-spin" />}
-                <span>{showXai ? "Hide Attributions" : "Calculate SHAP"}</span>
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowWhatIf(!showWhatIf)}
+                  className="text-xs font-semibold px-2 py-1 rounded bg-slate-800 hover:bg-slate-750 text-slate-300 border border-slate-700 transition-all flex items-center gap-1 cursor-pointer"
+                >
+                  <Sliders className="w-3 h-3 text-sky-400" />
+                  <span>{showWhatIf ? "Hide Sandbox" : "What-If Sandbox"}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleFetchXai}
+                  disabled={loadingXai}
+                  className="text-xs font-semibold px-2.5 py-1 rounded bg-sky-600/20 hover:bg-sky-600/30 text-sky-300 border border-sky-500/30 transition-all flex items-center gap-1 cursor-pointer"
+                >
+                  {loadingXai && <RefreshCw className="w-3 h-3 animate-spin" />}
+                  <span>{showXai ? "Hide Attributions" : "Calculate SHAP"}</span>
+                </button>
+              </div>
             </div>
+
+            {/* WHAT-IF COUNTERFACTUAL SANDBOX */}
+            {showWhatIf && (
+              <div className="p-3 bg-slate-900/90 rounded-lg border border-sky-500/20 space-y-3 text-xs animate-fade-in">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-200 uppercase text-[10px] tracking-wider flex items-center gap-1.5">
+                    <Sliders className="w-3.5 h-3.5 text-sky-400" />
+                    <span>Counterfactual Perturbation Simulator</span>
+                  </span>
+                  <button
+                    onClick={() => handleRunCounterfactual()}
+                    disabled={runningCf}
+                    className="px-2 py-0.5 rounded bg-sky-600 hover:bg-sky-500 text-white text-[10px] font-bold transition-all cursor-pointer shadow"
+                  >
+                    {runningCf ? "Simulating..." : "Run Perturbation"}
+                  </button>
+                </div>
+                <p className="text-[11px] text-slate-400">
+                  Tweak packet properties to test if model prediction flips towards <b>Benign</b>:
+                </p>
+
+                <div className="grid grid-cols-3 gap-2.5">
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-slate-400 block font-mono">Pkt Len ({cfSliders.packet_len}B)</label>
+                    <input
+                      type="range"
+                      min="20"
+                      max="1500"
+                      value={cfSliders.packet_len}
+                      onChange={(e) => setCfSliders({ ...cfSliders, packet_len: e.target.value })}
+                      className="w-full accent-sky-500 cursor-pointer"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-slate-400 block font-mono">SYN Flags ({cfSliders.syn_count})</label>
+                    <input
+                      type="range"
+                      min="0"
+                      max="1000"
+                      value={cfSliders.syn_count}
+                      onChange={(e) => setCfSliders({ ...cfSliders, syn_count: e.target.value })}
+                      className="w-full accent-sky-500 cursor-pointer"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-slate-400 block font-mono">Packets/s ({cfSliders.flow_packets_s})</label>
+                    <input
+                      type="range"
+                      min="1"
+                      max="3000"
+                      value={cfSliders.flow_packets_s}
+                      onChange={(e) => setCfSliders({ ...cfSliders, flow_packets_s: e.target.value })}
+                      className="w-full accent-sky-500 cursor-pointer"
+                    />
+                  </div>
+                </div>
+
+                {cfData && (
+                  <div className="p-2.5 bg-slate-950 rounded border border-slate-800 space-y-1.5 font-mono text-[11px]">
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-400">Original Verdict:</span>
+                      <span className="font-bold text-rose-400">{cfData.baseline.predicted_class} ({(cfData.baseline.confidence * 100).toFixed(1)}%)</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-400">Perturbed Verdict:</span>
+                      <span className={`font-bold ${cfData.counterfactual.predicted_class === 'Benign' ? 'text-emerald-400' : 'text-amber-400'}`}>
+                        {cfData.counterfactual.predicted_class} ({(cfData.counterfactual.confidence * 100).toFixed(1)}%)
+                      </span>
+                    </div>
+                    <div className="pt-1 border-t border-slate-850 flex items-center justify-between text-[10px]">
+                      <span className="text-slate-500">Classification Shift:</span>
+                      <span className={`font-bold ${cfData.decision_changed ? 'text-emerald-400' : 'text-slate-400'}`}>
+                        {cfData.decision_changed ? "Decision Reversed via Perturbation!" : "Robust (No Decision Flip)"}
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             {showXai && xaiData && (
               <div className="space-y-2.5 pt-1 animate-fade-in">

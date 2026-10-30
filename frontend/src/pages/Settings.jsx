@@ -1,6 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Settings as SettingsIcon, Sliders, Shield, Save, ShieldAlert, Trash2 } from 'lucide-react';
+import { 
+  Settings as SettingsIcon, 
+  Sliders, 
+  Shield, 
+  Save, 
+  ShieldAlert, 
+  Trash2, 
+  Link as LinkIcon, 
+  CheckCircle2, 
+  Send, 
+  ShieldCheck, 
+  KeyRound, 
+  RefreshCw 
+} from 'lucide-react';
 
 const Settings = () => {
   // Existing Local Storage Settings
@@ -13,15 +26,26 @@ const Settings = () => {
   const [apiUrl, setApiUrl] = useState(() => {
     return localStorage.getItem('soc_api_url') || (import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000');
   });
+  const [webhookUrl, setWebhookUrl] = useState(() => {
+    return localStorage.getItem('soc_webhook_url') || '';
+  });
   const [saved, setSaved] = useState(false);
 
-  // New IPS Auto-Containment Settings
+  // IPS Auto-Containment Settings
   const [ipsActive, setIpsActive] = useState(false);
   const [ipsLoading, setIpsLoading] = useState(true);
   
   // State for hard reset functionality
   const [resetting, setResetting] = useState(false);
   const [resetMessage, setResetMessage] = useState(null);
+
+  // Webhook Test state
+  const [testingWebhook, setTestingWebhook] = useState(false);
+  const [webhookFeedback, setWebhookFeedback] = useState(null);
+
+  // Forensic Audit Verification state
+  const [verifyingAudit, setVerifyingAudit] = useState(false);
+  const [auditData, setAuditData] = useState(null);
 
   // Helper function to build headers for API calls
   const getAuthHeaders = () => {
@@ -47,12 +71,13 @@ const Settings = () => {
       });
   }, [apiUrl]);
 
-  // Handle saving the local UI settings (threshold, polling, api)
+  // Handle saving the local UI settings (threshold, polling, api, webhook)
   const handleSave = (e) => {
     e.preventDefault();
     localStorage.setItem('soc_threshold', threshold.toString());
     localStorage.setItem('soc_polling_interval', interval.toString());
     localStorage.setItem('soc_api_url', apiUrl.trim());
+    localStorage.setItem('soc_webhook_url', webhookUrl.trim());
     
     // Broadcast event across app tabs / windows
     window.dispatchEvent(new Event('soc-settings-updated'));
@@ -76,6 +101,45 @@ const Settings = () => {
     }
   };
 
+  // Test SIEM Webhook Dispatch
+  const handleTestWebhook = async () => {
+    if (!webhookUrl.trim()) {
+      setWebhookFeedback({ type: 'error', text: 'Please enter a webhook URL first.' });
+      setTimeout(() => setWebhookFeedback(null), 3000);
+      return;
+    }
+    setTestingWebhook(true);
+    setWebhookFeedback(null);
+    try {
+      const headers = getAuthHeaders();
+      await axios.post(`${apiUrl}/notifications/webhook`, {
+        webhook_url: webhookUrl.trim()
+      }, { headers });
+      setWebhookFeedback({ type: 'success', text: 'Test alert delivered successfully!' });
+    } catch (err) {
+      setWebhookFeedback({ type: 'error', text: err.response?.data?.detail || 'Failed to dispatch webhook.' });
+    } finally {
+      setTestingWebhook(false);
+      setTimeout(() => setWebhookFeedback(null), 4000);
+    }
+  };
+
+  // Verify Tamper-Evident Hash Chain
+  const handleVerifyAudit = async () => {
+    setVerifyingAudit(true);
+    setAuditData(null);
+    try {
+      const headers = getAuthHeaders();
+      const res = await axios.get(`${apiUrl}/audit/verify`, { headers });
+      setAuditData(res.data);
+    } catch (err) {
+      console.error("Audit verification error:", err);
+      alert("Failed to verify cryptographic audit trail.");
+    } finally {
+      setVerifyingAudit(false);
+    }
+  };
+
   // Handle completely resetting the tenant's statistics and data
   const handleResetData = async () => {
     const confirmDelete = window.confirm(
@@ -91,15 +155,12 @@ const Settings = () => {
       const headers = getAuthHeaders();
       const res = await axios.post(`${apiUrl}/statistics/reset`, {}, { headers });
       setResetMessage({ type: 'success', text: res.data.message || 'All statistics have been cleared.' });
-      
-      // Trigger a dashboard refresh
       window.dispatchEvent(new Event('soc-settings-updated'));
     } catch (error) {
       console.error("Failed to reset statistics", error);
       setResetMessage({ type: 'error', text: 'Failed to reset statistics. Please check your connection.' });
     } finally {
       setResetting(false);
-      // Clear message after 4 seconds
       setTimeout(() => setResetMessage(null), 4000);
     }
   };
@@ -113,10 +174,10 @@ const Settings = () => {
           <SettingsIcon className="w-5 h-5 text-slate-400" />
           <span>System Settings</span>
         </h1>
-        <p className="text-xs text-slate-400 mt-1">Configure threat containment rules, threshold bounds, and backend endpoints.</p>
+        <p className="text-xs text-slate-400 mt-1">Configure threat containment rules, threshold bounds, SIEM webhooks, and forensic integrity.</p>
       </div>
 
-      {/* NEW: IPS Auto-Containment Toggle Block */}
+      {/* IPS Auto-Containment Toggle Block */}
       <div className="glass-panel p-6 bg-slate-900 border border-slate-800 rounded-xl relative overflow-hidden">
         <div className="flex justify-between items-start mb-5">
           <div>
@@ -147,13 +208,90 @@ const Settings = () => {
           <div className="mt-4 p-3 bg-rose-950/30 border border-rose-900/50 rounded-lg flex items-start gap-2 animate-pulse">
             <span className="w-2 h-2 rounded-full bg-rose-500 mt-1 shrink-0"></span>
             <span className="text-xs text-rose-300 leading-tight">
-              <strong>WARNING:</strong> Active Defense Mode enabled. The AI engine is authorized to instantly drop incoming packets from network IP addresses categorized as highly malicious.
+              <strong>ACTIVE DEFENSE:</strong> Autonomous IPS mode is engaged. Verified malicious flows will be contained instantly upon inference.
             </span>
           </div>
         )}
       </div>
 
-      {/* EXISTING: Dashboard UI Settings Block */}
+      {/* CRYPTOGRAPHIC AUDIT INTEGRITY CHECKER */}
+      <div className="glass-panel p-6 bg-slate-900/50 border border-slate-800 rounded-xl space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 text-sky-400">
+            <KeyRound className="w-5 h-5" />
+            <h3 className="text-sm font-bold uppercase tracking-wider text-slate-200">Tamper-Evident Forensic Audit Chain</h3>
+          </div>
+          <button
+            type="button"
+            onClick={handleVerifyAudit}
+            disabled={verifyingAudit}
+            className="px-3 py-1.5 rounded-lg bg-sky-600/20 hover:bg-sky-600/30 border border-sky-500/30 text-sky-300 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shadow"
+          >
+            {verifyingAudit ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <ShieldCheck className="w-3.5 h-3.5" />}
+            <span>{verifyingAudit ? "Computing Hashes..." : "Verify Cryptographic Audit"}</span>
+          </button>
+        </div>
+        <p className="text-xs text-slate-400">
+          Evaluates sequential SHA-256 hash chaining across tenant incident logs to prove zero data alteration or unauthorized deletion for regulatory compliance (SOC 2, ISO 27001).
+        </p>
+
+        {auditData && (
+          <div className="p-4 bg-slate-950 border border-slate-800 rounded-lg space-y-2 text-xs font-mono animate-fade-in">
+            <div className="flex items-center justify-between text-emerald-400 font-bold">
+              <span className="flex items-center gap-1.5">
+                <CheckCircle2 className="w-4 h-4" />
+                <span>INTEGRITY VERIFIED: ZERO TAMPER DETECTED</span>
+              </span>
+              <span className="text-[10px] text-slate-500">{auditData.total_records_verified} Verified Blocks</span>
+            </div>
+            <div className="text-[11px] text-slate-400 space-y-1 pt-1 border-t border-slate-800/80">
+              <div className="truncate"><span className="text-slate-500">Chain Head:</span> {auditData.chain_head}</div>
+              <div><span className="text-slate-500">Algorithm:</span> {auditData.algorithm}</div>
+              <div><span className="text-slate-500">Verified Timestamp:</span> {auditData.verified_at}</div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* SIEM & WEBHOOK INTEGRATION */}
+      <div className="glass-panel p-6 bg-slate-900/40 rounded-xl border border-slate-800/50 space-y-4">
+        <div className="flex items-center gap-2 text-slate-200">
+          <LinkIcon className="w-5 h-5 text-emerald-400" />
+          <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-200">SIEM & Webhook Forwarding</h3>
+        </div>
+        <p className="text-xs text-slate-400">
+          Forward critical threat notifications and MITRE ATT&CK tags in real time to Slack, Discord, Microsoft Teams, or custom SIEM collectors.
+        </p>
+
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              placeholder="https://hooks.slack.com/services/... or Discord Webhook"
+              value={webhookUrl}
+              onChange={(e) => setWebhookUrl(e.target.value)}
+              className="flex-1 bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-xs text-slate-200 focus:outline-none focus:border-slate-700 font-mono transition-colors"
+            />
+            <button
+              type="button"
+              onClick={handleTestWebhook}
+              disabled={testingWebhook}
+              className="px-3.5 py-2.5 rounded-lg bg-slate-800 hover:bg-slate-750 text-slate-200 text-xs font-semibold border border-slate-700 flex items-center gap-1.5 transition-all cursor-pointer shrink-0"
+            >
+              {testingWebhook ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5 text-emerald-400" />}
+              <span>Test Webhook</span>
+            </button>
+          </div>
+
+          {webhookFeedback && (
+            <div className={`text-xs p-2.5 rounded-lg font-medium flex items-center gap-2 ${webhookFeedback.type === 'success' ? 'bg-emerald-950/40 border border-emerald-500/20 text-emerald-300' : 'bg-rose-950/40 border border-rose-500/20 text-rose-300'}`}>
+              <span>{webhookFeedback.text}</span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Dashboard UI Settings Block */}
       <div className="glass-panel p-6 bg-slate-900/40 rounded-xl border border-slate-800/50">
         <h3 className="text-sm font-semibold text-slate-200 mb-5 border-b border-slate-800 pb-2">Dashboard Interface Parameters</h3>
         
@@ -211,7 +349,7 @@ const Settings = () => {
           <div className="pt-2 border-t border-slate-800/80">
             <button
               type="submit"
-              className="w-full mt-4 bg-emerald-600 hover:bg-emerald-500 text-slate-100 px-4 py-2.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-all shadow-md"
+              className="w-full mt-4 bg-emerald-600 hover:bg-emerald-500 text-slate-100 px-4 py-2.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-all shadow-md cursor-pointer"
             >
               <Save className="w-4 h-4" />
               <span>{saved ? "Settings Applied!" : "Save Dashboard Modifications"}</span>
@@ -234,7 +372,7 @@ const Settings = () => {
           <button
             onClick={handleResetData}
             disabled={resetting}
-            className="w-full bg-rose-900/60 hover:bg-rose-800 text-rose-100 px-4 py-3 rounded-lg text-xs font-bold transition-all border border-rose-700/50 shadow-sm flex justify-center items-center gap-2"
+            className="w-full bg-rose-900/60 hover:bg-rose-800 text-rose-100 px-4 py-3 rounded-lg text-xs font-bold transition-all border border-rose-700/50 shadow-sm flex justify-center items-center gap-2 cursor-pointer"
           >
             {resetting ? (
               <span className="flex items-center gap-2">

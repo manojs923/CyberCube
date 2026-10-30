@@ -104,5 +104,70 @@ class XAIExplainerService:
                        ", ".join([f"{item['feature']} (SHAP: {item['shap_value']:+.3f})" for item in top_attributions[:3]])
         }
 
+    def counterfactual_analysis(self, feature_dict: dict, perturbed_features: dict = None):
+        """
+        Simulate counterfactual "What-If" perturbations on flow features.
+        Calculates baseline vs perturbed prediction classes and confidence deltas.
+        """
+        if not self.pipeline:
+            self._load_model()
+            if not self.pipeline:
+                return {"error": "Model pipeline unavailable"}
+
+        # Baseline vector
+        baseline_row = {}
+        for feat in self.features:
+            val = feature_dict.get(feat, 0.0)
+            try:
+                baseline_row[feat] = float(val) if val is not None else 0.0
+            except (ValueError, TypeError):
+                baseline_row[feat] = 0.0
+
+        df_baseline = pd.DataFrame([baseline_row])[self.features]
+        base_probs = self.pipeline.predict_proba(df_baseline)[0]
+        base_pred = self.pipeline.predict(df_baseline)[0]
+        base_conf = float(base_probs[self.classes.index(base_pred)])
+
+        # Perturbed vector
+        perturbed_row = dict(baseline_row)
+        if perturbed_features:
+            for feat, new_val in perturbed_features.items():
+                if feat in self.features:
+                    try:
+                        perturbed_row[feat] = float(new_val)
+                    except (ValueError, TypeError):
+                        pass
+
+        df_perturbed = pd.DataFrame([perturbed_row])[self.features]
+        pert_probs = self.pipeline.predict_proba(df_perturbed)[0]
+        pert_pred = self.pipeline.predict(df_perturbed)[0]
+        pert_conf = float(pert_probs[self.classes.index(pert_pred)])
+
+        # Class shift probabilities
+        probability_comparison = []
+        for idx, cls_name in enumerate(self.classes):
+            orig_p = float(base_probs[idx])
+            new_p = float(pert_probs[idx])
+            probability_comparison.append({
+                "class_name": cls_name,
+                "original_probability": round(orig_p, 4),
+                "perturbed_probability": round(new_p, 4),
+                "delta": round(new_p - orig_p, 4)
+            })
+
+        return {
+            "baseline": {
+                "predicted_class": base_pred,
+                "confidence": round(base_conf, 4)
+            },
+            "counterfactual": {
+                "predicted_class": pert_pred,
+                "confidence": round(pert_conf, 4)
+            },
+            "decision_changed": (base_pred != pert_pred),
+            "class_probabilities": probability_comparison,
+            "applied_perturbations": perturbed_features or {}
+        }
+
 # Global singleton
 xai_service = XAIExplainerService()
